@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hobit AX AgentOS</title>
+    <link rel="stylesheet" href="/ui/app.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">AX</div>
+          <div>
+            <h1>Hobit AX</h1>
+            <p>AgentOS Console</p>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Session</span>
+          <input id="sessionId" value="web-session" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>User</span>
+          <input id="userId" value="web-user" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>API Token</span>
+          <input id="apiToken" type="password" autocomplete="off" placeholder="optional" />
+        </label>
+
+        <div class="toolbar">
+          <button id="refreshSession" type="button">Refresh</button>
+          <button id="runDoctor" type="button">Doctor</button>
+        </div>
+
+        <section class="panel compact">
+          <h2>Status</h2>
+          <dl id="statusList" class="stats"></dl>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Admin Interface</p>
+            <h2>Operations Console</h2>
+          </div>
+          <div class="segmented" role="tablist" aria-label="View">
+            <a href="/portal">User Portal</a>
+            <button class="active" data-view="chat" type="button">Chat</button>
+            <button data-view="ops" type="button">Ops</button>
+            <button data-view="trace" type="button">Trace</button>
+          </div>
+        </header>
+
+        <section id="chatView" class="view active">
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <form id="askForm" class="composer">
+            <textarea
+              id="messageText"
+              rows="3"
+              placeholder="복수전공 신청 기간과 준비 서류를 알려줘"
+            ></textarea>
+            <div class="composer-actions">
+              <label class="checkline">
+                <input id="asyncMode" type="checkbox" checked />
+                <span>Async job</span>
+              </label>
+              <button type="submit">Send</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="opsView" class="view">
+          <div class="grid">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Session Timeline</h2>
+                <button id="loadTimeline" type="button">Load</button>
+              </div>
+              <div id="timeline" class="event-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Runs</h2>
+                <button id="loadRuns" type="button">Load</button>
+              </div>
+              <div id="runs" class="event-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="traceView" class="view">
+          <div class="trace-tools">
+            <input id="traceRunId" placeholder="run_id" autocomplete="off" />
+            <button id="loadTrace" type="button">Load Trace</button>
+          </div>
+          <div id="traceOutput" class="trace-output"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/ui/app.js"></script>
+  </body>
+</html>

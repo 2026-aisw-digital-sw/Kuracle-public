@@ -1,0 +1,28 @@
+[agent]
+id = "agent_hobit_knowledge"
+display_name = "Knowledge Agent"
+runtime_module = "hobit_ax_agentos.agents.knowledge"
+runtime_class = "KnowledgeAgent"
+status = "active"
+owner = "rag-team"
+
+[agentos]
+node_id = "knowledge_query"
+capability_id = "cap.agent_hobit_knowledge"
+executor_kind = "thread"
+graph_role = "tool"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/schemas.py::KNOWLEDGE_OUTPUT_SCHEMA"
+
+[handoff]
+upstream = ["hobit_coordinator", "agent_hobit_persona"]
+downstream = ["agent_hobit_action", "agent_hobit_escalation", "agent_hobit_final"]
+shared_state = ["conversation_turns", "agent_runs"]
+
+[development]
+editable_scope = ["agents/agent_hobit_knowledge/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"

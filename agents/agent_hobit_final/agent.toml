@@ -1,0 +1,28 @@
+[agent]
+id = "agent_hobit_final"
+display_name = "Final Response Agent"
+runtime_module = "hobit_ax_agentos.agents.final_response"
+runtime_class = "FinalResponseAgent"
+status = "active"
+owner = "experience-team"
+
+[agentos]
+node_id = "final_response"
+capability_id = "cap.agent_hobit_final"
+executor_kind = "thread"
+graph_role = "join"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/schemas.py::FINAL_OUTPUT_SCHEMA"
+
+[handoff]
+upstream = ["agent_hobit_knowledge", "agent_hobit_action", "agent_hobit_escalation"]
+downstream = ["outbox", "delivery_renderer", "user_portal"]
+shared_state = ["outbox", "conversation_turns"]
+
+[development]
+editable_scope = ["agents/agent_hobit_final/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"

@@ -1,0 +1,1 @@
+"""Channel Gateway agent workspace."""

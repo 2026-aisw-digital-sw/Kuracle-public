@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hobit-ax-agentos"
+version = "0.1.0"
+description = "AgentOS-based multi-agent service shell for hobit-ax regulation_rag."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+test = ["fastapi>=0.110", "httpx>=0.27", "pytest>=8"]
+dev = ["fastapi>=0.110", "httpx>=0.27", "pytest>=8", "uvicorn>=0.29"]
+
+[project.scripts]
+hobit-agentos = "hobit_ax_agentos.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+hobit_ax_agentos = ["web/*.html", "web/*.css", "web/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,28 @@
+[agent]
+id = "agent_hobit_escalation"
+display_name = "Escalation Agent"
+runtime_module = "hobit_ax_agentos.agents.escalation"
+runtime_class = "EscalationAgent"
+status = "active"
+owner = "review-ops-team"
+
+[agentos]
+node_id = "escalation_prepare"
+capability_id = "cap.agent_hobit_escalation"
+executor_kind = "thread"
+graph_role = "tool"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/schemas.py::ESCALATION_OUTPUT_SCHEMA"
+
+[handoff]
+upstream = ["agent_hobit_knowledge"]
+downstream = ["agent_hobit_final", "human_reviewer"]
+shared_state = ["escalations", "agent_runs"]
+
+[development]
+editable_scope = ["agents/agent_hobit_escalation/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"

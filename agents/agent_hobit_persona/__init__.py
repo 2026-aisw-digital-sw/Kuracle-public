@@ -1,0 +1,1 @@
+"""Persona Worker agent workspace."""

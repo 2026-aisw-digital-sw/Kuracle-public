@@ -1,0 +1,28 @@
+[agent]
+id = "hobit_coordinator"
+display_name = "Coordinator Agent"
+runtime_module = "hobit_ax_agentos.agents.coordinator"
+runtime_class = "CoordinatorAgent"
+status = "active"
+owner = "orchestration-team"
+
+[agentos]
+node_id = "planner"
+capability_id = "cap.hobit_coordinator"
+executor_kind = "inline"
+graph_role = "planner"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/models.py::CoordinationPlan"
+
+[handoff]
+upstream = ["agent_hobit_channel_gateway", "agent_hobit_persona"]
+downstream = ["AgentOS TaskGraphIR", "agent_hobit_knowledge", "agent_hobit_action", "agent_hobit_escalation", "agent_hobit_final"]
+shared_state = ["coordination_plans", "agent_runs"]
+
+[development]
+editable_scope = ["agents/hobit_coordinator/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"

@@ -1,0 +1,28 @@
+[agent]
+id = "agent_hobit_channel_gateway"
+display_name = "Channel Gateway"
+runtime_module = "hobit_ax_agentos.agents.channel_gateway"
+runtime_class = "ChannelGateway"
+status = "active"
+owner = "channel-team"
+
+[agentos]
+node_id = "pre_graph_channel_normalize"
+capability_id = "cap.agent_hobit_channel_gateway"
+executor_kind = "inline"
+graph_role = "pre-graph"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/models.py::IncomingMessage"
+
+[handoff]
+upstream = ["external_channel"]
+downstream = ["hobit_coordinator", "agent_hobit_persona"]
+shared_state = ["conversation_turns"]
+
+[development]
+editable_scope = ["agents/agent_hobit_channel_gateway/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"

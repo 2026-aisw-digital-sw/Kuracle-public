@@ -1,0 +1,28 @@
+[agent]
+id = "agent_hobit_trigger"
+display_name = "Trigger Agent"
+runtime_module = "hobit_ax_agentos.agents.trigger"
+runtime_class = "TriggerAgent"
+status = "active"
+owner = "proactive-team"
+
+[agentos]
+node_id = "proactive_trigger_emit"
+capability_id = "cap.agent_hobit_trigger"
+executor_kind = "thread"
+graph_role = "trigger"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/models.py::TriggerEvent"
+
+[handoff]
+upstream = ["deadline_watches", "regulation_sources"]
+downstream = ["agent_hobit_channel_gateway", "hobit_coordinator", "user_portal"]
+shared_state = ["deadline_watches", "conversation_turns"]
+
+[development]
+editable_scope = ["agents/agent_hobit_trigger/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"

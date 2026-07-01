@@ -1,0 +1,28 @@
+[agent]
+id = "agent_example"
+display_name = "Example Agent"
+runtime_module = "hobit_ax_agentos.agents.example"
+runtime_class = "ExampleAgent"
+status = "template"
+owner = "unassigned"
+
+[agentos]
+node_id = "example_node"
+capability_id = "cap.agent_example"
+executor_kind = "thread"
+graph_role = "tool"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/schemas.py::EXAMPLE_OUTPUT_SCHEMA"
+
+[handoff]
+upstream = []
+downstream = []
+shared_state = []
+
+[development]
+editable_scope = ["agents/agent_example/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"

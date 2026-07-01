@@ -1,0 +1,28 @@
+[agent]
+id = "agent_hobit_persona"
+display_name = "Persona Worker"
+runtime_module = "hobit_ax_agentos.agents.persona"
+runtime_class = "PersonaWorker"
+status = "active"
+owner = "personalization-team"
+
+[agentos]
+node_id = "pre_graph_persona_context"
+capability_id = "cap.agent_hobit_persona"
+executor_kind = "thread"
+graph_role = "prefetch"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/models.py::PersonaSnapshot"
+
+[handoff]
+upstream = ["agent_hobit_channel_gateway", "conversation_turns"]
+downstream = ["hobit_coordinator", "agent_hobit_knowledge", "user_portal"]
+shared_state = ["persona_snapshots"]
+
+[development]
+editable_scope = ["agents/agent_hobit_persona/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"

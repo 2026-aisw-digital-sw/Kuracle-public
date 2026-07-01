@@ -1,0 +1,28 @@
+[agent]
+id = "agent_hobit_action"
+display_name = "Action Agent"
+runtime_module = "hobit_ax_agentos.agents.action"
+runtime_class = "ActionAgent"
+status = "disabled_by_default"
+owner = "action-team"
+
+[agentos]
+node_id = "action_prepare"
+capability_id = "cap.agent_hobit_action"
+executor_kind = "thread"
+graph_role = "tool"
+
+[contract]
+input_contract = "contract.md#input"
+output_contract = "contract.md#output"
+output_schema = "src/hobit_ax_agentos/schemas.py::ACTION_OUTPUT_SCHEMA"
+
+[handoff]
+upstream = ["agent_hobit_knowledge"]
+downstream = ["agent_hobit_final", "human_approval"]
+shared_state = ["agent_runs", "outbox"]
+
+[development]
+editable_scope = ["agents/agent_hobit_action/**"]
+template_entrypoint = "template.py"
+test_template = "tests/test_contract_template.py"
