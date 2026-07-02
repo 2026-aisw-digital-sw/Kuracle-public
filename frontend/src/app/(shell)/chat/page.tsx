@@ -21,6 +21,32 @@ interface ChatMessage {
   error?: string;
 }
 
+function RegulationPath({ fullName, shortName }: { fullName: string; shortName: string }) {
+  const parts = fullName.split(" > ");
+  if (parts.length <= 1) {
+    return (
+      <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded inline-block">
+        {fullName}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="text-[10px] text-muted-foreground inline-flex flex-wrap items-center gap-0.5"
+      title={fullName}
+    >
+      {parts.map((part, i) => (
+        <span key={i} className="inline-flex items-center gap-0.5">
+          {i > 0 && <span className="opacity-40 select-none">›</span>}
+          <span className={i === parts.length - 1 ? "font-medium text-foreground/70 bg-muted px-1 py-px rounded" : ""}>
+            {part}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function CitedRules({
   ruleIds,
   articles,
@@ -50,11 +76,12 @@ function CitedRules({
                   key={a.node_id}
                   className="rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-xs"
                 >
-                  <div className="flex items-baseline gap-1.5 flex-wrap">
-                    {a.regulation_name && (
-                      <span className="shrink-0 text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                        {a.regulation_name}
-                      </span>
+                  <div className="flex flex-col gap-0.5">
+                    {(a.regulation_full_name || a.regulation_name) && (
+                      <RegulationPath
+                        fullName={a.regulation_full_name || a.regulation_name}
+                        shortName={a.regulation_name}
+                      />
                     )}
                     <span className="font-medium text-foreground">{a.label}</span>
                   </div>

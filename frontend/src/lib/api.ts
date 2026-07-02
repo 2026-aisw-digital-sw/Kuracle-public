@@ -28,6 +28,7 @@ export interface CitedArticle {
   node_id: string;
   label: string;
   regulation_name: string;
+  regulation_full_name: string;
   content_preview: string;
 }
 

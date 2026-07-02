@@ -167,18 +167,19 @@ class RegulationRagAdapter:
             if not rule_ids or self._store is None:
                 return []
 
-            # regulation_id → short_name 매핑 (manifest에서 로드)
+            # regulation_id → (short_name, full_name) 매핑 (manifest에서 로드)
             manifest_path = (
                 self.settings.regulation_rag_path / "configs" / "regulation_manifest.yaml"
             )
-            reg_name_map: dict[str, str] = {}
+            reg_short_map: dict[str, str] = {}
+            reg_full_map: dict[str, str] = {}
             try:
                 manifest = RegulationManifest.load(manifest_path)
-                reg_name_map = {
-                    e.id: e.short_name
-                    for e in manifest.all()
-                    if e.short_name
-                }
+                for e in manifest.all():
+                    if e.short_name:
+                        reg_short_map[e.id] = e.short_name
+                    if e.full_name:
+                        reg_full_map[e.id] = e.full_name
             except Exception:
                 pass
 
@@ -210,11 +211,13 @@ class RegulationRagAdapter:
                         continue
                     seen.add(article.node_id)
                     doc_id = getattr(article, "document_id", None) or ""
-                    regulation_name = reg_name_map.get(doc_id, doc_id)
+                    short_name = reg_short_map.get(doc_id, doc_id)
+                    full_name = reg_full_map.get(doc_id, short_name)
                     result.append({
                         "node_id": article.node_id,
                         "label": article.label,
-                        "regulation_name": regulation_name,
+                        "regulation_name": short_name,
+                        "regulation_full_name": full_name,
                         "content_preview": (article.content or "")[:200],
                     })
             return result

@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from dataclasses import asdict
 from datetime import date
-from pathlib import Path
 from typing import Any
 
 from hobit_ax_agentos.agentos.capabilities import agent_capabilities
@@ -45,7 +44,7 @@ from hobit_ax_agentos.storage import (
 
 try:
     from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-    from fastapi.responses import FileResponse, JSONResponse
+    from fastapi.responses import JSONResponse
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError("Install hobit-ax-agentos[api] to run the API server") from exc
 
@@ -55,8 +54,7 @@ bootstrap_local_dependencies(settings)
 app = FastAPI(title="Hobit AX AgentOS")
 
 
-WEB_DIR = Path(__file__).resolve().parents[1] / "web"
-PUBLIC_PATHS = {"/", "/app", "/portal", "/health", "/ready"}
+PUBLIC_PATHS = {"/health", "/ready"}
 _rate_limit_buckets: dict[str, list[float]] = {}
 
 
@@ -139,34 +137,6 @@ def _run_async_job(
         )
     except KeyError:
         return
-
-
-@app.get("/")
-def web_root() -> FileResponse:
-    return FileResponse(WEB_DIR / "index.html")
-
-
-@app.get("/app")
-def web_app() -> FileResponse:
-    return FileResponse(WEB_DIR / "index.html")
-
-
-@app.get("/portal")
-def user_portal() -> FileResponse:
-    return FileResponse(WEB_DIR / "portal.html")
-
-
-@app.get("/ui/{asset_name}")
-def web_asset(asset_name: str) -> FileResponse:
-    allowed_assets = {
-        "app.css": "text/css",
-        "app.js": "application/javascript",
-        "portal.css": "text/css",
-        "portal.js": "application/javascript",
-    }
-    if asset_name not in allowed_assets:
-        raise HTTPException(status_code=404, detail="asset not found")
-    return FileResponse(WEB_DIR / asset_name, media_type=allowed_assets[asset_name])
 
 
 @app.get("/health")
