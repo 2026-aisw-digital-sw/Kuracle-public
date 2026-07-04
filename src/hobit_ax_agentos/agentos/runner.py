@@ -59,6 +59,7 @@ class ServiceRunner:
     run_store: RunStore | None = None
     idempotency_store: IdempotencyStore | None = None
     _results: dict[str, dict[str, Any]] = field(default_factory=dict, init=False)
+    _event_queue: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         bootstrap_local_dependencies(self.settings)
@@ -82,10 +83,16 @@ class ServiceRunner:
 
             self.action_agent = ActionAgent()
 
-    def run_message(self, message: IncomingMessage, timeout_seconds: float = 120.0) -> ServiceResult:
+    def run_message(
+        self,
+        message: IncomingMessage,
+        timeout_seconds: float = 120.0,
+        event_queue: Any = None,
+    ) -> ServiceResult:
         from hobit_ax_agentos.agents.coordinator import CoordinatorAgent
 
         self._results = {}
+        self._event_queue = event_queue
         idempotency_key = self._idempotency_key(message)
         if idempotency_key:
             cached = self.idempotency_store.get(idempotency_key)  # type: ignore[union-attr]
@@ -145,34 +152,31 @@ class ServiceRunner:
             )
         deadline = time.monotonic() + timeout_seconds
         worker_results: list[dict[str, Any]] = []
-        lifecycle_events: list[dict[str, Any]] = [
-            {
-                "event": "run.started",
-                "run_id": run_id,
-                "plan_id": coordination_plan.plan_id,
-                "at": utc_now(),
-            }
-        ]
+        lifecycle_events: list[dict[str, Any]] = []
+        self._push_event(lifecycle_events, {
+            "event": "run.started",
+            "run_id": run_id,
+            "plan_id": coordination_plan.plan_id,
+            "at": utc_now(),
+        })
 
         while time.monotonic() < deadline:
             run_summary = client.get_run(run_id)
             if run_summary["state"] in {"COMPLETED", "FAILED", "BLOCKED", "CANCELLED"}:
                 final = self._results.get("final_response")
+                finished_event = {
+                    "event": "run.finished",
+                    "run_id": run_id,
+                    "state": str(run_summary["state"]),
+                    "at": utc_now(),
+                }
                 run_summary = {
                     **run_summary,
                     "plan_execution": summarize_plan_execution(
                         plan=coordination_plan,
                         worker_results=worker_results,
                     ),
-                    "lifecycle_events": [
-                        *lifecycle_events,
-                        {
-                            "event": "run.finished",
-                            "run_id": run_id,
-                            "state": str(run_summary["state"]),
-                            "at": utc_now(),
-                        },
-                    ],
+                    "lifecycle_events": [*lifecycle_events, finished_event],
                 }
                 self.run_store.complete(  # type: ignore[union-attr]
                     run_id=run_id,
@@ -186,6 +190,13 @@ class ServiceRunner:
                     final=final,
                     run_id=run_id,
                 )
+                self._push_event(lifecycle_events, {
+                    **finished_event,
+                    "final": final,
+                })
+                if self._event_queue is not None:
+                    self._event_queue.put(None)  # sentinel: stream closed
+                self._event_queue = None
                 if final and final.get("response"):
                     self.outbox_store.append_response(  # type: ignore[union-attr]
                         session_id=message.session_id,
@@ -238,23 +249,21 @@ class ServiceRunner:
                     "trace_id": getattr(lease, "trace_id", None),
                     "at": utc_now(),
                 }
-                lifecycle_events.append(lease_event)
+                self._push_event(lifecycle_events, lease_event)
                 try:
                     validate_lease_against_plan(
                         plan=coordination_plan,
                         node_id=node_id,
                         agent_id=agent_id,
                     )
-                    lifecycle_events.append(
-                        {
-                            "event": "node.started",
-                            "run_id": run_id,
-                            "lease_id": lease.lease_id,
-                            "node_id": node_id,
-                            "agent_id": agent_id,
-                            "at": utc_now(),
-                        }
-                    )
+                    self._push_event(lifecycle_events, {
+                        "event": "node.started",
+                        "run_id": run_id,
+                        "lease_id": lease.lease_id,
+                        "node_id": node_id,
+                        "agent_id": agent_id,
+                        "at": utc_now(),
+                    })
                     result = self._handle_lease(lease, message)
                     self._validate_result_contract(lease, result)
                     self._results[lease.node["node_id"]] = result
@@ -263,16 +272,14 @@ class ServiceRunner:
                             coordinator.plan_store, coordination_plan, result
                         )
                     action_result = self._report_result(client, lease, result, message)
-                    lifecycle_events.append(
-                        {
-                            "event": "node.completed",
-                            "run_id": run_id,
-                            "lease_id": lease.lease_id,
-                            "node_id": node_id,
-                            "agent_id": agent_id,
-                            "at": utc_now(),
-                        }
-                    )
+                    self._push_event(lifecycle_events, {
+                        "event": "node.completed",
+                        "run_id": run_id,
+                        "lease_id": lease.lease_id,
+                        "node_id": node_id,
+                        "agent_id": agent_id,
+                        "at": utc_now(),
+                    })
                     worker_result = {
                         "lease_id": lease.lease_id,
                         "node_id": node_id,
@@ -284,18 +291,19 @@ class ServiceRunner:
                     worker_results.append(worker_result)
                     self.run_store.append_worker_result(run_id, worker_result)  # type: ignore[union-attr]
                 except Exception as exc:
-                    lifecycle_events.append(
-                        {
-                            "event": "node.failed",
-                            "run_id": run_id,
-                            "lease_id": lease.lease_id,
-                            "node_id": node_id,
-                            "agent_id": agent_id,
-                            "error_type": exc.__class__.__name__,
-                            "error": str(exc),
-                            "at": utc_now(),
-                        }
-                    )
+                    self._push_event(lifecycle_events, {
+                        "event": "node.failed",
+                        "run_id": run_id,
+                        "lease_id": lease.lease_id,
+                        "node_id": node_id,
+                        "agent_id": agent_id,
+                        "error_type": exc.__class__.__name__,
+                        "error": str(exc),
+                        "at": utc_now(),
+                    })
+                    if self._event_queue is not None:
+                        self._event_queue.put(None)
+                    self._event_queue = None
                     self._record_failed_run(
                         run_id=run_id,
                         state="FAILED",
@@ -310,22 +318,28 @@ class ServiceRunner:
             if not handled:
                 time.sleep(0.05)
 
+        timeout_event = {"event": "run.timed_out", "run_id": run_id, "at": utc_now()}
+        self._push_event(lifecycle_events, timeout_event)
+        if self._event_queue is not None:
+            self._event_queue.put(None)
+        self._event_queue = None
         self._record_failed_run(
             run_id=run_id,
             state="TIMED_OUT",
             trace_id=None,
             error=TimeoutError(f"AgentOS run {run_id} did not finish within {timeout_seconds}s"),
             worker_results=worker_results,
-            lifecycle_events=[
-                *lifecycle_events,
-                {
-                    "event": "run.timed_out",
-                    "run_id": run_id,
-                    "at": utc_now(),
-                },
-            ],
+            lifecycle_events=lifecycle_events,
         )
         raise TimeoutError(f"AgentOS run {run_id} did not finish within {timeout_seconds}s")
+
+    def _push_event(self, lifecycle_events: list[dict[str, Any]], event: dict[str, Any]) -> None:
+        lifecycle_events.append(event)
+        if self._event_queue is not None:
+            try:
+                self._event_queue.put_nowait(event)
+            except Exception:
+                pass
 
     def _record_actual_classification(self, plan_store, plan, result: dict[str, Any]) -> None:
         """Patch the saved CoordinationPlan with the real LLM-derived intent once

@@ -44,7 +44,7 @@ from hobit_ax_agentos.storage import (
 
 try:
     from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, StreamingResponse
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError("Install hobit-ax-agentos[api] to run the API server") from exc
 
@@ -249,6 +249,82 @@ def gateway_submit(
         "job": job.to_dict(),
         "status_url": f"/jobs/{job.job_id}",
     }
+
+
+@app.post("/gateway/{channel}/stream")
+async def gateway_stream(
+    channel: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> StreamingResponse:
+    """SSE streaming endpoint.
+
+    Emits newline-delimited Server-Sent Events as the AgentOS graph executes:
+      data: {"event": "run.started", ...}
+      data: {"event": "node.started", "node_id": "knowledge_query", ...}
+      data: {"event": "node.completed", "node_id": "knowledge_query", ...}
+      ...
+      data: {"event": "run.finished", "final": {...}, ...}
+
+    The stream closes after the sentinel event or on client disconnect.
+    """
+    import asyncio
+    import json
+    import queue as _queue
+
+    message = ChannelGateway(settings).normalize(channel, payload)
+    timeout_seconds = float(payload.get("timeout_seconds", 120.0))
+    q: _queue.Queue = _queue.Queue()
+
+    async def _run_in_thread() -> None:
+        loop = asyncio.get_event_loop()
+
+        def _worker() -> None:
+            try:
+                ServiceRunner(settings=settings).run_message(
+                    message,
+                    timeout_seconds=timeout_seconds,
+                    event_queue=q,
+                )
+            except Exception as exc:
+                q.put({"event": "run.error", "error": type(exc).__name__, "detail": str(exc)})
+                q.put(None)
+
+        await loop.run_in_executor(None, _worker)
+
+    async def _event_generator():
+        task = asyncio.create_task(_run_in_thread())
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    item = q.get_nowait()
+                    if item is None:  # sentinel — run finished or errored
+                        break
+                    yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+                except _queue.Empty:
+                    if task.done():
+                        # drain any remaining events before closing
+                        while not q.empty():
+                            item = q.get_nowait()
+                            if item is not None:
+                                yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+                        break
+                    await asyncio.sleep(0.05)
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/gateway/{channel}")
