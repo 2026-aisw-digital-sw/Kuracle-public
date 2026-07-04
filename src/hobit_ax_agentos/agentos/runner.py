@@ -25,8 +25,11 @@ from hobit_ax_agentos.storage import (
     ConversationStore,
     IdempotencyStore,
     OutboxStore,
+    PendingActionStore,
     PersonaStore,
+    ProfileGateStore,
     ProfileStore,
+    RegulationGapStore,
     RunStore,
 )
 
@@ -50,6 +53,9 @@ class ServiceRunner:
     outbox_store: OutboxStore | None = None
     persona_store: PersonaStore | None = None
     profile_store: ProfileStore | None = None
+    profile_gate_store: ProfileGateStore | None = None
+    pending_action_store: PendingActionStore | None = None
+    regulation_gap_store: RegulationGapStore | None = None
     run_store: RunStore | None = None
     idempotency_store: IdempotencyStore | None = None
     _results: dict[str, dict[str, Any]] = field(default_factory=dict, init=False)
@@ -64,6 +70,9 @@ class ServiceRunner:
         self.outbox_store = self.outbox_store or OutboxStore(self.settings.data_dir)
         self.persona_store = self.persona_store or PersonaStore(self.settings.data_dir)
         self.profile_store = self.profile_store or ProfileStore(self.settings.data_dir)
+        self.profile_gate_store = self.profile_gate_store or ProfileGateStore(self.settings.data_dir)
+        self.pending_action_store = self.pending_action_store or PendingActionStore(self.settings.data_dir)
+        self.regulation_gap_store = self.regulation_gap_store or RegulationGapStore(self.settings.data_dir)
         self.run_store = self.run_store or RunStore(self.settings.data_dir)
         self.idempotency_store = self.idempotency_store or IdempotencyStore(
             self.settings.data_dir
@@ -84,6 +93,8 @@ class ServiceRunner:
                 cached_run = self.run_store.get(cached["run_id"])  # type: ignore[union-attr]
                 if cached_run:
                     return self._service_result_from_run(cached_run, reused=True)
+        # Profile Gate: if the user is answering a profile follow-up, re-run original question.
+        message = self._resolve_profile_gate(message)
         if not message.metadata.get("profile"):
             stored_profile = self.profile_store.get(message.user_id)  # type: ignore[union-attr]
             if stored_profile:
@@ -169,6 +180,11 @@ class ServiceRunner:
                     trace_id=run_summary.get("trace_id"),
                     final=final,
                     run_summary=run_summary,
+                )
+                final = self._post_process_run(
+                    message=message,
+                    final=final,
+                    run_id=run_id,
                 )
                 if final and final.get("response"):
                     self.outbox_store.append_response(  # type: ignore[union-attr]
@@ -497,4 +513,156 @@ class ServiceRunner:
                     required_permissions=[],
                 )
             )
+
+    # ── Profile Gate ─────────────────────────────────────────────────────────
+
+    def _resolve_profile_gate(self, message: IncomingMessage) -> IncomingMessage:
+        """If there's an active ProfileGateRecord for this session, treat the current
+        message as the user's profile answer, then swap the message text to the original
+        question and carry the profile answer as context."""
+        gate = self.profile_gate_store.active_for_session(message.session_id)  # type: ignore[union-attr]
+        if gate is None:
+            return message
+        gate = self.profile_gate_store.increment_retry(gate.gate_id)  # type: ignore[union-attr]
+        if gate is None or gate.status == "EXPIRED":
+            logger.info(
+                "[ServiceRunner] ProfileGate %s expired after max retries", gate and gate.gate_id
+            )
+            return message
+        self.profile_gate_store.resolve(gate.gate_id)  # type: ignore[union-attr]
+        logger.info(
+            "[ServiceRunner] ProfileGate %s resolved; re-running original question: %r",
+            gate.gate_id,
+            gate.original_text,
+        )
+        new_metadata = {
+            **message.metadata,
+            "profile_gate_response": message.text,
+            "profile_gate_id": gate.gate_id,
+            "profile_gate_missing_fields": gate.missing_fields,
+        }
+        from hobit_ax_agentos.models import IncomingMessage as IM
+        return IM(
+            channel=message.channel,
+            user_id=message.user_id,
+            text=gate.original_text,
+            session_id=message.session_id,
+            attachments=message.attachments,
+            metadata=new_metadata,
+        )
+
+    def _post_process_run(
+        self,
+        message: IncomingMessage,
+        final: dict[str, Any] | None,
+        run_id: str,
+    ) -> dict[str, Any] | None:
+        """After a run completes, create ProfileGate if profile_gaps are present,
+        store PendingAction if an action plan was produced, and log RegulationGaps
+        for escalated runs."""
+        if final is None:
+            return final
+        knowledge = self._results.get("knowledge_query", {})
+        profile_gaps = knowledge.get("profile_gaps") or []
+        if profile_gaps:
+            gate = self._create_profile_gate(message, profile_gaps, run_id)
+            follow_up = self._follow_up_for_gaps(profile_gaps)
+            response = str(final.get("response") or "")
+            final = {
+                **final,
+                "response": f"{response}\n\n{follow_up}".strip() if response else follow_up,
+                "profile_gate": {
+                    "gate_id": gate.gate_id,
+                    "missing_fields": profile_gaps,
+                    "follow_up_question": follow_up,
+                },
+            }
+        action_result = self._results.get("action_prepare", {})
+        action_plan = action_result.get("action_plan")
+        if action_plan and isinstance(action_plan, dict):
+            self._record_pending_action(message, action_plan, run_id)
+        if knowledge.get("requires_human_review") and knowledge.get("regulation_gaps"):
+            for gap_query in knowledge["regulation_gaps"]:
+                issue_types = knowledge.get("issue_types") or []
+                issue_type = issue_types[0] if issue_types else "unknown"
+                self.regulation_gap_store.upsert(  # type: ignore[union-attr]
+                    issue_type=issue_type,
+                    query=str(gap_query),
+                    user_id=message.user_id,
+                    session_id=message.session_id,
+                )
+        return final
+
+    def _create_profile_gate(
+        self,
+        message: IncomingMessage,
+        missing_fields: list[str],
+        run_id: str,
+    ):
+        import uuid
+        from hobit_ax_agentos.models import ProfileGateRecord
+        gate = ProfileGateRecord(
+            gate_id=f"gate_{uuid.uuid4().hex}",
+            session_id=message.session_id,
+            user_id=message.user_id,
+            original_text=message.metadata.get("original_text") or message.text,
+            missing_fields=missing_fields,
+            run_id=run_id,
+        )
+        self.profile_gate_store.save(gate)  # type: ignore[union-attr]
+        logger.info(
+            "[ServiceRunner] ProfileGate created: gate_id=%s missing=%s",
+            gate.gate_id,
+            missing_fields,
+        )
+        return gate
+
+    def _follow_up_for_gaps(self, missing_fields: list[str]) -> str:
+        _FIELD_QUESTIONS: dict[str, str] = {
+            "college": "어느 단과대/학부 소속이신가요?",
+            "college_name": "어느 단과대/학부 소속이신가요?",
+            "department": "학과(부)가 어떻게 되시나요?",
+            "department_name": "학과(부)가 어떻게 되시나요?",
+            "year": "학번(입학 연도)이 어떻게 되시나요?",
+            "year_of_admission": "학번(입학 연도)이 어떻게 되시나요?",
+            "current_semester": "현재 몇 학기째 재학 중이신가요?",
+            "semester": "현재 몇 학기째 재학 중이신가요?",
+            "student_id": "학번이 어떻게 되시나요?",
+            "is_transfer": "편입학생이신가요?",
+            "double_major": "이중전공을 하고 계신가요?",
+        }
+        questions = []
+        seen: set[str] = set()
+        for field in missing_fields:
+            q = _FIELD_QUESTIONS.get(field)
+            if q and q not in seen:
+                questions.append(q)
+                seen.add(q)
+        if not questions:
+            questions = ["더 정확한 답변을 위해 추가 정보가 필요합니다. 학번, 학과, 단과대 등을 알려주시겠어요?"]
+        return " ".join(questions)
+
+    def _record_pending_action(
+        self,
+        message: IncomingMessage,
+        action_plan: dict[str, Any],
+        run_id: str,
+    ) -> None:
+        import uuid
+        from hobit_ax_agentos.models import PendingAction
+        action = PendingAction(
+            action_id=f"pa_{uuid.uuid4().hex}",
+            user_id=message.user_id,
+            session_id=message.session_id,
+            issue_type=str(action_plan.get("issue_type") or "unknown"),
+            form_name=str(action_plan.get("form_name") or ""),
+            action_plan=action_plan,
+            run_id=run_id,
+        )
+        self.pending_action_store.save(action)  # type: ignore[union-attr]
+        logger.info(
+            "[ServiceRunner] PendingAction recorded: action_id=%s issue_type=%s",
+            action.action_id,
+            action.issue_type,
+        )
 

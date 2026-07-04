@@ -212,6 +212,105 @@ class OutboundDelivery:
 
 
 @dataclass(slots=True)
+class AcademicEvent:
+    """User-specific academic calendar item.
+
+    Created when Action Agent produces an action plan with a deadline, or when
+    TriggerAgent fires a deadline event. Gives agents a unified user timeline view.
+    """
+
+    event_id: str
+    user_id: str
+    session_id: str
+    event_type: Literal["deadline", "registration", "notification", "action", "custom"]
+    issue_type: str
+    title: str
+    due_date: str  # ISO date string (YYYY-MM-DD)
+    status: Literal["ACTIVE", "COMPLETED", "DISMISSED"] = "ACTIVE"
+    source: str = "system"
+    run_id: str | None = None
+    metadata: JsonMap = field(default_factory=dict)
+    created_at: str = field(default_factory=utc_now)
+    updated_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> JsonMap:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class PendingAction:
+    """An action plan produced by ActionAgent that has not yet been submitted.
+
+    Created when ActionAgent generates a form draft / checklist. Marked SUBMITTED
+    once the user completes the portal action, or CANCELLED if they abandon it.
+    """
+
+    action_id: str
+    user_id: str
+    session_id: str
+    issue_type: str
+    form_name: str
+    status: Literal["PENDING", "SUBMITTED", "CANCELLED"] = "PENDING"
+    action_plan: JsonMap = field(default_factory=dict)
+    run_id: str | None = None
+    created_at: str = field(default_factory=utc_now)
+    updated_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> JsonMap:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class RegulationGap:
+    """Recurring unresolved regulation query logged after Escalation resolution.
+
+    Tracks questions that the system cannot answer confidently. Accumulates across
+    sessions to surface which regulation areas need authoring attention.
+    """
+
+    gap_id: str
+    issue_type: str
+    query: str
+    frequency: int = 1
+    status: Literal["OPEN", "RESOLVED"] = "OPEN"
+    user_id: str | None = None
+    session_id: str | None = None
+    escalation_id: str | None = None
+    resolution: str | None = None
+    created_at: str = field(default_factory=utc_now)
+    updated_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> JsonMap:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class ProfileGateRecord:
+    """Stores a deferred question while the system collects missing profile fields.
+
+    When KnowledgeAgent returns non-empty profile_gaps, ServiceRunner creates one of
+    these. On the next turn from the same user/session, ServiceRunner detects the
+    active gate, injects the new message as profile info, and re-runs the original
+    question. Expires after max_retries attempts.
+    """
+
+    gate_id: str
+    session_id: str
+    user_id: str
+    original_text: str
+    missing_fields: list[str]
+    status: Literal["WAITING", "RESOLVED", "EXPIRED"] = "WAITING"
+    retry_count: int = 0
+    max_retries: int = 2
+    run_id: str | None = None
+    created_at: str = field(default_factory=utc_now)
+    updated_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> JsonMap:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class ServiceResult:
     run_id: str
     trace_id: str | None
