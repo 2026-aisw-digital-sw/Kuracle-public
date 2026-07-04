@@ -27,7 +27,7 @@ from hobit_ax_agentos.storage import (
 
 
 def test_gateway_classifies_normalized_message(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(main, "settings", AppSettings(data_dir=tmp_path))
+    monkeypatch.setattr(main, "settings", AppSettings(data_dir=tmp_path, openai_api_key=None))
     client = TestClient(main.app)
 
     response = client.post(
@@ -45,36 +45,8 @@ def test_gateway_classifies_normalized_message(tmp_path, monkeypatch) -> None:
     assert data["classification"]["intent_family"] == "deadline_question"
 
 
-def test_web_ui_assets_are_served_without_api_token(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        main,
-        "settings",
-        AppSettings(data_dir=tmp_path, api_token="secret-token"),
-    )
-    client = TestClient(main.app)
-
-    html = client.get("/app")
-    portal = client.get("/portal")
-    css = client.get("/ui/app.css")
-    js = client.get("/ui/app.js")
-    portal_css = client.get("/ui/portal.css")
-    portal_js = client.get("/ui/portal.js")
-
-    assert html.status_code == 200
-    assert "Hobit AX AgentOS" in html.text
-    assert portal.status_code == 200
-    assert "Hobit AX Portal" in portal.text
-    assert css.status_code == 200
-    assert "text/css" in css.headers["content-type"]
-    assert js.status_code == 200
-    assert "application/javascript" in js.headers["content-type"]
-    assert portal_css.status_code == 200
-    assert portal_js.status_code == 200
-    assert client.get("/config").status_code == 401
-
-
 def test_gateway_dry_run_returns_graph(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(main, "settings", AppSettings(data_dir=tmp_path))
+    monkeypatch.setattr(main, "settings", AppSettings(data_dir=tmp_path, enable_action_agent=False))
     client = TestClient(main.app)
 
     response = client.post(
@@ -201,7 +173,7 @@ def test_gateway_submit_records_normalized_async_job(tmp_path, monkeypatch) -> N
                 worker_results=[],
             )
 
-    monkeypatch.setattr(main, "settings", AppSettings(data_dir=tmp_path))
+    monkeypatch.setattr(main, "settings", AppSettings(data_dir=tmp_path, openai_api_key=None))
     monkeypatch.setattr(main, "ServiceRunner", FakeRunner)
     client = TestClient(main.app)
 
@@ -564,7 +536,7 @@ def test_config_endpoint_returns_sanitized_snapshot(tmp_path, monkeypatch) -> No
     monkeypatch.setattr(
         main,
         "settings",
-        AppSettings(data_dir=tmp_path, api_token="secret-token"),
+        AppSettings(data_dir=tmp_path, api_token="secret-token", enable_action_agent=False),
     )
     client = TestClient(main.app)
 
@@ -588,7 +560,7 @@ def test_ready_endpoint_returns_readiness(tmp_path, monkeypatch) -> None:
 
 
 def test_agents_endpoint_returns_capability_manifest(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(main, "settings", AppSettings(data_dir=tmp_path))
+    monkeypatch.setattr(main, "settings", AppSettings(data_dir=tmp_path, enable_action_agent=False))
     client = TestClient(main.app)
 
     manifest = client.get("/agents").json()

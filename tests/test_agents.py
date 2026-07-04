@@ -47,6 +47,25 @@ class FakeAdapter:
             "evidence_packets": [{"confidence": 0.9}],
         }
 
+    def run_action_agent(self, knowledge_result: dict, profile: dict | None = None) -> dict:
+        state = knowledge_result.get("state") or {}
+        issue_graph = state.get("issue_graph") or []
+        issue_type = issue_graph[0].get("issue_type") if issue_graph else "academic.plural_major"
+        return {
+            "action_plan": {
+                "issue_type": issue_type,
+                "form_name": "신청서",
+                "action_type": "checklist",
+                "steps": [],
+                "pre_filled_form": [],
+                "required_docs": ["신청서"],
+                "portal_url": None,
+                "deadline": None,
+                "cautions": [],
+            },
+            "requires_human_approval": False,
+        }
+
 
 def test_channel_gateway_normalizes_api_payload() -> None:
     message = ChannelGateway().normalize(
@@ -279,7 +298,7 @@ def test_conversation_store_persists_session_turns(tmp_path) -> None:
 
 
 def test_coordinator_persists_plan_without_action_agent(tmp_path) -> None:
-    settings = AppSettings(data_dir=tmp_path, enable_action_agent=False)
+    settings = AppSettings(data_dir=tmp_path, enable_action_agent=False, openai_api_key=None)
     persona = PersonaWorker().build(
         IncomingMessage(
             channel="api",
@@ -320,3 +339,37 @@ def test_final_response_ignores_non_review_escalation_payload() -> None:
 
     assert result["response"] == "Use the portal."
     assert result["delivery"]["escalation"]["requires_human_review"] is False
+
+
+def test_action_agent_produces_action_plan_via_adapter() -> None:
+    from hobit_ax_agentos.agents.action import ActionAgent
+
+    agent = ActionAgent(adapter=FakeAdapter())
+    result = agent.run({
+        "knowledge": {
+            "risk_class": "LOW",
+            "state": {
+                "issue_graph": [{"issue_type": "academic.plural_major"}],
+                "parsed_intent": {"intent_mode": "checklist"},
+                "evidence_packets": [],
+            },
+        }
+    })
+
+    assert result["action_plan"]["issue_type"] == "academic.plural_major"
+    assert result["action_plan"]["form_name"] == "신청서"
+    assert result["requires_human_approval"] is False
+
+
+def test_action_agent_propagates_high_risk_approval() -> None:
+    from hobit_ax_agentos.agents.action import ActionAgent
+
+    agent = ActionAgent(adapter=FakeAdapter())
+    result = agent.run({
+        "knowledge": {
+            "risk_class": "HIGH",
+            "state": {},
+        }
+    })
+
+    assert result["requires_human_approval"] is True

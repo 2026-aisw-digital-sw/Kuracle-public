@@ -38,7 +38,7 @@ class AppSettings:
     default_session_id: str = os.getenv("HOBIT_SESSION_ID", "local-session")
     confidence_threshold: float = float(os.getenv("HOBIT_CONFIDENCE_THRESHOLD", "0.7"))
     data_dir: Path = Path(os.getenv("HOBIT_AGENTOS_DATA_DIR", "data"))
-    enable_action_agent: bool = os.getenv("HOBIT_ENABLE_ACTION_AGENT", "false").lower() == "true"
+    enable_action_agent: bool = os.getenv("HOBIT_ENABLE_ACTION_AGENT", "true").lower() == "true"
     rate_limit_per_minute: int = int(os.getenv("HOBIT_RATE_LIMIT_PER_MINUTE", "0"))
     # Optional hybrid (dense+sparse) retrieval backend for regulation_rag's content
     # layer. Mirrors regulation_rag's own api/main.py default: prefer a local

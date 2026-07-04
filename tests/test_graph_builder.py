@@ -5,8 +5,8 @@ from hobit_ax_agentos.config import AppSettings
 from hobit_ax_agentos.models import IncomingMessage
 
 
-def test_dry_run_graph_excludes_action_agent_by_default() -> None:
-    graph = ServiceRunner().dry_run_graph(
+def test_dry_run_graph_excludes_action_agent_when_disabled() -> None:
+    graph = ServiceRunner(settings=AppSettings(enable_action_agent=False)).dry_run_graph(
         IncomingMessage(
             channel="api",
             user_id="user_1",
